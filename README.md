@@ -16,7 +16,7 @@ The script is smart: it will attempt to claim a coffee once per day, but will st
 Clone this repository to your device.
 
 ```bash
-git clone https://github.com/YourUsername/octopus-coffee-claimer.git
+git clone https://github.com/ZainRaz/octopus-coffee-claimer.git
 cd octopus-coffee-claimer
 ```
 
