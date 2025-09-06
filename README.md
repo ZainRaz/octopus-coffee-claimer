@@ -16,18 +16,17 @@ The script is smart: it will attempt to claim a coffee once per day, but will st
 Clone this repository to your device.
 
 ```bash
-git clone https://github.com/ZainRaz/octopus-coffee-claimer.git
+git clone https://github.com/YourUsername/octopus-coffee-claimer.git
 cd octopus-coffee-claimer
 ```
 
 ### 2. Install Dependencies
 
-Install Python, the Chromium web browser, and the necessary drivers.
+Install Python, the Chromium web browser, and the necessary drivers and libraries using the system's package manager.
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip git chromium-browser chromium-chromedriver
-pip3 install selenium
+sudo apt install -y python3 python3-pip git chromium-browser chromium-chromedriver python3-selenium
 ```
 
 ### 3. Configure Credentials
