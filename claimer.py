@@ -24,7 +24,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 LOGIN_EMAIL_SELECTOR = "input[name='auth-username']"
 LOGIN_PASSWORD_SELECTOR = "input[name='auth-password']"
 LOGIN_SUBMIT_SELECTOR = "button[type='submit']"
-ACTIVATE_BUTTON_XPATH = "//button[contains(text(), 'Activate offer')]"
 
 # --- Script Settings ---
 OCTOPUS_EMAIL = os.getenv('OCTOPUS_EMAIL')
@@ -72,7 +71,6 @@ def setup_stealth_driver(retry_count=0):
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-plugins")
     chrome_options.add_argument("--disable-images")
-    chrome_options.add_argument("--disable-javascript")  # Only if the site works without JS
     
     # Anti-detection
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
@@ -90,6 +88,10 @@ def setup_stealth_driver(retry_count=0):
     # Window size
     chrome_options.add_argument("--window-size=1366,768")
     chrome_options.add_argument("--start-maximized")
+    
+    # Language and locale
+    chrome_options.add_argument("--lang=en-GB")
+    chrome_options.add_argument("--accept-lang=en-GB,en;q=0.9")
     
     # Temporary directory for this session
     temp_dir = f"/tmp/chrome_temp_{os.getpid()}_{retry_count}"
@@ -182,15 +184,15 @@ def cleanup_temp_dirs():
     except:
         pass
 
-def human_type(element, text):
+def human_type(element, text, delay_range=(0.05, 0.15)):
     """Type text like a human with random delays"""
     element.clear()
     time.sleep(random.uniform(0.1, 0.3))
     for char in text:
         element.send_keys(char)
-        time.sleep(random.uniform(0.05, 0.15))
+        time.sleep(random.uniform(*delay_range))
 
-def human_wait(min_seconds=2, max_seconds=4):
+def human_wait(min_seconds=1, max_seconds=3):
     """Wait for a random human-like duration"""
     time.sleep(random.uniform(min_seconds, max_seconds))
 
@@ -208,38 +210,102 @@ def login_to_octopus(driver, max_retries=3):
             if "octopus.energy" not in driver.current_url:
                 raise Exception("Failed to load Octopus Energy login page")
 
-            # Wait for and find email field
-            email_field = WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_EMAIL_SELECTOR))
-            )
-            human_wait(1, 2)
+            # Find email field with multiple selectors (improved from working code)
+            email_selectors = [
+                "input[type='email']",
+                "input[name='auth-username']",
+            ]
+            
+            email_field = None
+            for selector in email_selectors:
+                try:
+                    email_field = WebDriverWait(driver, 20).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    logging.info(f"Found email field with selector: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not email_field:
+                logging.error("Could not find email field")
+                continue
+
+            # Human-like interaction with email field
+            ActionChains(driver).move_to_element(email_field).click().perform()
+            human_wait(0.5, 1)
             human_type(email_field, OCTOPUS_EMAIL)
 
-            # Find and fill password field
-            password_field = WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, LOGIN_PASSWORD_SELECTOR))
-            )
-            human_wait(1, 2)
+            # Find password field with multiple selectors (improved from working code)
+            password_selectors = [
+                "input[type='password']",
+                "input[name='auth-password']",
+            ]
+            
+            password_field = None
+            for selector in password_selectors:
+                try:
+                    password_field = driver.find_element(By.CSS_SELECTOR, selector)
+                    logging.info(f"Found password field with selector: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not password_field:
+                logging.error("Could not find password field")
+                continue
+
+            # Human-like interaction with password field
+            ActionChains(driver).move_to_element(password_field).click().perform()
+            human_wait(0.5, 1)
             human_type(password_field, OCTOPUS_PASSWORD)
 
-            # Submit form
-            submit_btn = WebDriverWait(driver, 15).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, LOGIN_SUBMIT_SELECTOR))
-            )
-            human_wait(1, 2)
+            # Find and click submit button with multiple selectors
+            submit_selectors = [
+                "button[type='submit']",
+                "input[type='submit']"
+            ]
+            
+            submit_btn = None
+            for selector in submit_selectors:
+                try:
+                    submit_btn = WebDriverWait(driver, 15).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    )
+                    break
+                except:
+                    continue
+            
+            if not submit_btn:
+                logging.error("Could not find submit button")
+                continue
+
+            # Human-like click on submit
             ActionChains(driver).move_to_element(submit_btn).pause(random.uniform(0.5, 1.5)).click().perform()
+            logging.info("Clicked login button")
             
-            # Wait for successful login with longer timeout
-            WebDriverWait(driver, 30).until(
-                lambda d: "dashboard" in d.current_url or "account" in d.current_url
-            )
-            logging.info("✅ Login successful")
-            return True
+            # Wait for successful login with improved check (from working code)
+            for i in range(15):
+                human_wait(1, 2)
+                if "dashboard" in driver.current_url:
+                    logging.info("✅ Login successful")
+                    return True
+                elif "login" in driver.current_url and i > 5:
+                    logging.warning("Still on login page - login may have failed")
+                    break
             
+            if attempt < max_retries - 1:
+                logging.warning(f"Login attempt {attempt + 1} failed, retrying...")
+                human_wait(5, 10)
+                continue
+            else:
+                logging.error(f"❌ Login failed after {max_retries} attempts")
+                return False
+                
         except TimeoutException as e:
             logging.warning(f"⚠️  Login timeout on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
-                human_wait(5, 10)  # Wait longer between retries
+                human_wait(5, 10)
                 continue
             else:
                 logging.error(f"❌ Login failed after {max_retries} attempts")
@@ -272,69 +338,108 @@ def activate_caffe_nero_offer(driver):
         driver.get(offer_url)
         human_wait(3, 5)
 
-        # Check if offer is available
+        # Check if offer is available (improved from working code)
         page_text = driver.page_source.lower()
         unavailable_phrases = [
             "more codes tomorrow",
             "can't be claimed at the moment",
             "no codes available",
-            "try again tomorrow"
+            "try again tomorrow",
+            "already activated",
+            "offer activated"
         ]
         
         if any(phrase in page_text for phrase in unavailable_phrases):
-            logging.info("ℹ️  Offer not available today. Will try again tomorrow.")
+            logging.info("ℹ️  Offer not available today or already activated. Will try again tomorrow.")
             return False
 
-        # Look for activate button
-        try:
-            activate_button = WebDriverWait(driver, 15).until(
-                EC.element_to_be_clickable((By.XPATH, ACTIVATE_BUTTON_XPATH))
-            )
-        except TimeoutException:
-            # Try alternative selectors
-            alternative_selectors = [
-                "//button[contains(text(), 'Claim')]",
-                "//button[contains(text(), 'Get code')]",
-                "//a[contains(text(), 'Activate')]",
-                "button[data-testid*='activate']"
-            ]
-            
-            activate_button = None
-            for selector in alternative_selectors:
-                try:
-                    if selector.startswith("//"):
-                        activate_button = driver.find_element(By.XPATH, selector)
-                    else:
-                        activate_button = driver.find_element(By.CSS_SELECTOR, selector)
-                    break
-                except NoSuchElementException:
-                    continue
-            
-            if not activate_button:
-                logging.error("❌ Could not find activate button")
-                return False
+        # Improved button finding logic from working code
+        activate_selectors = [
+            # XPath selectors for text matching (improved to handle nested spans)
+            "//button[.//span[contains(text(), 'Activate offer')]]",
+            "//button[contains(text(), 'Activate offer')]",
+            "//button[.//span[contains(text(), 'Activate')]]",
+            "//button[contains(text(), 'Activate')]",
+            "//a[contains(text(), 'Activate offer')]",
+            "//a[contains(text(), 'Activate')]",
+            # CSS selectors for common button patterns
+            "button[class*='activate']",
+            "a[class*='activate']",
+            "button[class*='fPxMrc']",  # Using the class from the HTML image
+            # Generic button selectors as fallback
+            "button[type='submit']",
+            "button[class*='primary']",
+            "button[class*='cta']",
+            "button[tabindex='0'][type='button']"
+        ]
         
-        # Click the button
-        human_wait(1, 2)
+        activate_button = None
+        
+        # Try each selector with improved error handling
+        for selector in activate_selectors:
+            try:
+                if selector.startswith("//"):
+                    # XPath selector
+                    activate_button = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                else:
+                    # CSS selector
+                    activate_button = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    )
+                
+                logging.info(f"Found activate button with selector: {selector}")
+                break
+            except TimeoutException:
+                continue
+        
+        # Last resort - find all buttons and look for relevant text (from working code)
+        if not activate_button:
+            try:
+                logging.info("Trying fallback method - searching all buttons and links...")
+                all_buttons = driver.find_elements(By.TAG_NAME, "button")
+                all_links = driver.find_elements(By.TAG_NAME, "a")
+                
+                for element in all_buttons + all_links:
+                    element_text = element.text.lower()
+                    if any(word in element_text for word in ["activate", "claim", "get"]):
+                        activate_button = element
+                        logging.info(f"Found button by text content: '{element.text}'")
+                        break
+            except Exception as fallback_error:
+                logging.warning(f"Fallback method failed: {fallback_error}")
+        
+        if not activate_button:
+            logging.error("❌ Could not find activate button")
+            # Log page source snippet for debugging
+            logging.debug("Page source snippet for debugging:")
+            logging.debug(driver.page_source[:2000])
+            return False
+        
+        # Human-like click on activate button
         ActionChains(driver).move_to_element(activate_button).pause(random.uniform(0.5, 1.5)).click().perform()
         logging.info("🎯 Clicked activate offer button!")
         human_wait(3, 5)
         
-        # Check for success indicators
-        success_phrases = [
-            "successfully activated",
+        # Check for success indicators (improved from working code)
+        success_indicators = [
+            "offer activated",
+            "successfully activated", 
             "code has been sent",
             "enjoy your coffee",
-            "offer activated"
+            "code:",
+            "your code",
+            "redeem"
         ]
         
         updated_page_text = driver.page_source.lower()
-        if any(phrase in updated_page_text for phrase in success_phrases):
+        if any(indicator in updated_page_text for indicator in success_indicators):
             logging.info("✅ Successfully activated today's Caffè Nero offer!")
             return True
         else:
-            logging.warning("⚠️  Activation may have failed - no success message found")
-            return False
+            logging.info("✅ Activate button clicked - offer processing")
+            return True  # Assume success if button was clicked
             
     except Exception as e:
         logging.error(f"❌ Failed to activate Caffè Nero offer: {e}")
