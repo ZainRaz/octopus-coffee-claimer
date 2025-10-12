@@ -54,7 +54,7 @@ def setup_stealth_driver(retry_count=0):
     chrome_options = Options()
     
     # Essential stability options
-    chrome_options.add_argument("--headless=new")  # Use new headless mode
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
@@ -136,37 +136,26 @@ def setup_stealth_driver(retry_count=0):
             service = Service(driver_path)
             logging.info(f"Using chromedriver: {driver_path}")
         else:
-            service = Service()  # Let selenium find it
+            service = Service()
             logging.info("Using system chromedriver")
         
-        # Set service timeout
         service.start()
-        
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        
-        # Set timeouts
         driver.set_page_load_timeout(30)
         driver.implicitly_wait(10)
-        
-        # Anti-detection script
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
-        # Test the driver
         driver.get("about:blank")
         
         return driver
         
     except Exception as e:
         logging.error(f"Failed to setup Chrome driver (attempt {retry_count + 1}): {e}")
-        
-        # Clean up temp directory
         try:
             import shutil
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
         except:
             pass
-            
         raise
 
 def cleanup_temp_dirs():
@@ -178,7 +167,6 @@ def cleanup_temp_dirs():
         for temp_dir in glob.glob(temp_pattern):
             try:
                 shutil.rmtree(temp_dir)
-                logging.info(f"Cleaned up temp dir: {temp_dir}")
             except:
                 pass
     except:
@@ -197,32 +185,25 @@ def human_wait(min_seconds=1, max_seconds=3):
     time.sleep(random.uniform(min_seconds, max_seconds))
 
 def login_to_octopus(driver, max_retries=3):
-    """Login to Octopus Energy account using stealth techniques"""
+    """Login to Octopus Energy account"""
     for attempt in range(max_retries):
         try:
-            logging.info(f"Starting stealth login (attempt {attempt + 1}/{max_retries})...")
+            logging.info(f"Starting login (attempt {attempt + 1}/{max_retries})...")
             
-            # Navigate to login page
             driver.get("https://octopus.energy/login/")
             human_wait(3, 5)
             
-            # Check if page loaded properly
             if "octopus.energy" not in driver.current_url:
                 raise Exception("Failed to load Octopus Energy login page")
 
-            # Find email field with multiple selectors (improved from working code)
-            email_selectors = [
-                "input[type='email']",
-                "input[name='auth-username']",
-            ]
-            
+            # Find email field
+            email_selectors = ["input[type='email']", "input[name='auth-username']"]
             email_field = None
             for selector in email_selectors:
                 try:
                     email_field = WebDriverWait(driver, 20).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                     )
-                    logging.info(f"Found email field with selector: {selector}")
                     break
                 except:
                     continue
@@ -231,22 +212,16 @@ def login_to_octopus(driver, max_retries=3):
                 logging.error("Could not find email field")
                 continue
 
-            # Human-like interaction with email field
             ActionChains(driver).move_to_element(email_field).click().perform()
             human_wait(0.5, 1)
             human_type(email_field, OCTOPUS_EMAIL)
 
-            # Find password field with multiple selectors (improved from working code)
-            password_selectors = [
-                "input[type='password']",
-                "input[name='auth-password']",
-            ]
-            
+            # Find password field
+            password_selectors = ["input[type='password']", "input[name='auth-password']"]
             password_field = None
             for selector in password_selectors:
                 try:
                     password_field = driver.find_element(By.CSS_SELECTOR, selector)
-                    logging.info(f"Found password field with selector: {selector}")
                     break
                 except:
                     continue
@@ -255,17 +230,12 @@ def login_to_octopus(driver, max_retries=3):
                 logging.error("Could not find password field")
                 continue
 
-            # Human-like interaction with password field
             ActionChains(driver).move_to_element(password_field).click().perform()
             human_wait(0.5, 1)
             human_type(password_field, OCTOPUS_PASSWORD)
 
-            # Find and click submit button with multiple selectors
-            submit_selectors = [
-                "button[type='submit']",
-                "input[type='submit']"
-            ]
-            
+            # Find submit button
+            submit_selectors = ["button[type='submit']", "input[type='submit']"]
             submit_btn = None
             for selector in submit_selectors:
                 try:
@@ -280,18 +250,17 @@ def login_to_octopus(driver, max_retries=3):
                 logging.error("Could not find submit button")
                 continue
 
-            # Human-like click on submit
             ActionChains(driver).move_to_element(submit_btn).pause(random.uniform(0.5, 1.5)).click().perform()
             logging.info("Clicked login button")
             
-            # Wait for successful login with improved check (from working code)
+            # Wait for login success
             for i in range(15):
                 human_wait(1, 2)
                 if "dashboard" in driver.current_url:
                     logging.info("✅ Login successful")
                     return True
                 elif "login" in driver.current_url and i > 5:
-                    logging.warning("Still on login page - login may have failed")
+                    logging.warning("Still on login page")
                     break
             
             if attempt < max_retries - 1:
@@ -300,24 +269,6 @@ def login_to_octopus(driver, max_retries=3):
                 continue
             else:
                 logging.error(f"❌ Login failed after {max_retries} attempts")
-                return False
-                
-        except TimeoutException as e:
-            logging.warning(f"⚠️  Login timeout on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                human_wait(5, 10)
-                continue
-            else:
-                logging.error(f"❌ Login failed after {max_retries} attempts")
-                return False
-                
-        except WebDriverException as e:
-            logging.warning(f"⚠️  WebDriver error on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                human_wait(5, 10)
-                continue
-            else:
-                logging.error(f"❌ Login failed after {max_retries} attempts due to WebDriver errors")
                 return False
                 
         except Exception as e:
@@ -330,123 +281,108 @@ def login_to_octopus(driver, max_retries=3):
     
     return False
 
-def activate_caffe_nero_offer(driver):
+def claim_caffe_nero_offer(driver):
     """Navigate to Caffè Nero offer page and activate the offer"""
     try:
+        # Navigate directly to the Caffè Nero offer page
         offer_url = f"https://octopus.energy/dashboard/new/accounts/{ACCOUNT_ID}/octoplus/partner/offers/caffe-nero"
         logging.info("Navigating to Caffè Nero offer page...")
         driver.get(offer_url)
-        human_wait(3, 5)
-
-        # Check if offer is available (improved from working code)
-        page_text = driver.page_source.lower()
-        unavailable_phrases = [
-            "more codes tomorrow",
-            "can't be claimed at the moment",
-            "no codes available",
-            "try again tomorrow",
-            "already activated",
-            "offer activated"
-        ]
         
-        if any(phrase in page_text for phrase in unavailable_phrases):
-            logging.info("ℹ️  Offer not available today or already activated. Will try again tomorrow.")
+        # Page can be temperamental - give it time to fully load
+        logging.info("Waiting for page to load...")
+        human_wait(5, 7)
+        
+        # Check for the "can't be claimed" error message first
+        page_text = driver.page_source.lower()
+        if "sorry, this offer can't be claimed at the moment" in page_text:
+            logging.info("ℹ️  Offer cannot be claimed at the moment - no codes available")
             return False
-
-        # Improved button finding logic from working code
-        activate_selectors = [
-            # XPath selectors for text matching (improved to handle nested spans)
-            "//button[.//span[contains(text(), 'Activate offer')]]",
-            "//button[contains(text(), 'Activate offer')]",
-            "//button[.//span[contains(text(), 'Activate')]]",
-            "//button[contains(text(), 'Activate')]",
-            "//a[contains(text(), 'Activate offer')]",
-            "//a[contains(text(), 'Activate')]",
-            # CSS selectors for common button patterns
-            "button[class*='activate']",
-            "a[class*='activate']",
-            "button[class*='fPxMrc']",  # Using the class from the HTML image
-            # Generic button selectors as fallback
-            "button[type='submit']",
-            "button[class*='primary']",
-            "button[class*='cta']",
-            "button[tabindex='0'][type='button']"
-        ]
+        
+        # Check for other unavailability messages
+        if "already claimed" in page_text or "more codes tomorrow" in page_text:
+            logging.info("ℹ️  Offer already claimed or no codes available")
+            return False
+        
+        # Look for the "Activate offer" button
+        logging.info("Looking for 'Activate offer' button...")
         
         activate_button = None
         
-        # Try each selector with improved error handling
-        for selector in activate_selectors:
-            try:
-                if selector.startswith("//"):
-                    # XPath selector
-                    activate_button = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, selector))
-                    )
-                else:
-                    # CSS selector
-                    activate_button = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                    )
-                
-                logging.info(f"Found activate button with selector: {selector}")
-                break
-            except TimeoutException:
-                continue
-        
-        # Last resort - find all buttons and look for relevant text (from working code)
-        if not activate_button:
-            try:
-                logging.info("Trying fallback method - searching all buttons and links...")
-                all_buttons = driver.find_elements(By.TAG_NAME, "button")
-                all_links = driver.find_elements(By.TAG_NAME, "a")
-                
-                for element in all_buttons + all_links:
-                    element_text = element.text.lower()
-                    if any(word in element_text for word in ["activate", "claim", "get"]):
-                        activate_button = element
-                        logging.info(f"Found button by text content: '{element.text}'")
-                        break
-            except Exception as fallback_error:
-                logging.warning(f"Fallback method failed: {fallback_error}")
-        
-        if not activate_button:
-            logging.error("❌ Could not find activate button")
-            # Log page source snippet for debugging
-            logging.debug("Page source snippet for debugging:")
-            logging.debug(driver.page_source[:2000])
-            return False
-        
-        # Human-like click on activate button
-        ActionChains(driver).move_to_element(activate_button).pause(random.uniform(0.5, 1.5)).click().perform()
-        logging.info("🎯 Clicked activate offer button!")
-        human_wait(3, 5)
-        
-        # Check for success indicators (improved from working code)
-        success_indicators = [
-            "offer activated",
-            "successfully activated", 
-            "code has been sent",
-            "enjoy your coffee",
-            "code:",
-            "your code",
-            "redeem"
+        # Button contains a span with "Activate offer" text
+        button_selectors = [
+            # Look for button containing span with "Activate offer"
+            (By.XPATH, "//button[.//span[contains(text(), 'Activate offer')]]"),
+            (By.XPATH, "//button[.//span[contains(text(), 'Activate Offer')]]"),
+            # Look for span with text, then get parent button
+            (By.XPATH, "//span[contains(text(), 'Activate offer')]/parent::button"),
+            (By.XPATH, "//span[contains(text(), 'Activate Offer')]/parent::button"),
+            # Any button with type="button" containing activate text
+            (By.XPATH, "//button[@type='button'][contains(., 'Activate')]"),
         ]
         
-        updated_page_text = driver.page_source.lower()
-        if any(indicator in updated_page_text for indicator in success_indicators):
-            logging.info("✅ Successfully activated today's Caffè Nero offer!")
+        # Try each selector
+        for by, selector in button_selectors:
+            try:
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((by, selector))
+                )
+                
+                button = driver.find_element(by, selector)
+                if button.is_displayed():
+                    activate_button = button
+                    logging.info(f"✓ Found button using selector: {selector}")
+                    break
+                    
+            except TimeoutException:
+                logging.debug(f"Timeout for selector: {selector}")
+                continue
+            except Exception as e:
+                logging.debug(f"Error with selector '{selector}': {e}")
+                continue
+        
+        if not activate_button:
+            logging.error("❌ Could not find 'Activate offer' button")
+            return False
+        
+        # Scroll to and click the button
+        logging.info(f"Attempting to click 'Activate offer' button")
+        try:
+            # Scroll into view
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", activate_button)
+            human_wait(1, 2)
+            
+            # Try JavaScript click (more reliable for React buttons)
+            driver.execute_script("arguments[0].click();", activate_button)
+            logging.info("🎯 Clicked button using JavaScript")
+                
+        except Exception as e:
+            logging.error(f"Failed to click button: {e}")
+            return False
+        
+        # Wait for the action to complete
+        human_wait(3, 5)
+        
+        # Check for success indicators
+        success_indicators = [
+            "offer activated", "successfully activated", "code has been sent",
+            "enjoy your coffee", "code:", "your code", "redeem", "voucher code"
+        ]
+        
+        page_text = driver.page_source.lower()
+        if any(indicator in page_text for indicator in success_indicators):
+            logging.info("✅ Successfully claimed Caffè Nero offer!")
             return True
         else:
-            logging.info("✅ Activate button clicked - offer processing")
-            return True  # Assume success if button was clicked
+            logging.info("✅ Button clicked - assuming success")
+            return True
             
     except Exception as e:
-        logging.error(f"❌ Failed to activate Caffè Nero offer: {e}")
+        logging.error(f"❌ Failed to claim Caffè Nero offer: {e}")
         return False
 
 def has_claimed_this_week():
-    """Check the state file to see if a claim has been made this week (since Monday)."""
+    """Check if already claimed this week"""
     if not os.path.exists(STATE_FILE):
         return False
     
@@ -459,10 +395,10 @@ def has_claimed_this_week():
             
         last_claim_date = datetime.fromisoformat(last_claim_str).date()
         today = date.today()
-        start_of_week = today - timedelta(days=today.weekday())  # Monday is 0
+        start_of_week = today - timedelta(days=today.weekday())
         
         if last_claim_date >= start_of_week:
-            logging.info(f"✅ Already claimed this week on {last_claim_date}. No action needed.")
+            logging.info(f"✅ Already claimed this week on {last_claim_date}")
             return True
         return False
         
@@ -471,71 +407,60 @@ def has_claimed_this_week():
         return False
 
 def record_successful_claim():
-    """Write the current timestamp to the state file."""
+    """Record successful claim"""
     try:
-        # Ensure directory exists
         state_dir = os.path.dirname(STATE_FILE)
         if state_dir and not os.path.exists(state_dir):
             os.makedirs(state_dir, exist_ok=True)
             
         with open(STATE_FILE, 'w') as f:
             f.write(datetime.now().isoformat())
-        logging.info(f"📝 Recorded successful claim in {STATE_FILE}")
+        logging.info(f"📝 Recorded successful claim")
         
     except OSError as e:
         logging.error(f"❌ Failed to record claim: {e}")
 
 def main():
-    """Main execution with weekly claim logic and retry mechanism."""
+    """Main execution"""
     if has_claimed_this_week():
-        return  # Exit if we've already claimed this week
-
-    logging.info("🚀 Starting weekly Caffè Nero claim attempt...")
+        return
     
-    max_driver_retries = 3
+    logging.info("🚀 Starting Caffè Nero claim attempt...")
+    
+    max_retries = 3
     driver = None
     
-    for driver_attempt in range(max_driver_retries):
+    for attempt in range(max_retries):
         try:
-            logging.info(f"Setting up driver (attempt {driver_attempt + 1}/{max_driver_retries})...")
-            driver = setup_stealth_driver(driver_attempt)
+            logging.info(f"Setting up driver (attempt {attempt + 1}/{max_retries})...")
+            driver = setup_stealth_driver(attempt)
             
             if login_to_octopus(driver):
-                if activate_caffe_nero_offer(driver):
+                if claim_caffe_nero_offer(driver):
                     record_successful_claim()
-                    logging.info("✅ Claim process completed successfully for the week.")
-                    return  # Success, exit
+                    logging.info("✅ Claim completed successfully")
+                    return
                 else:
-                    logging.info("❌ Claim attempt failed, will retry on the next run.")
-                    return  # Login worked but claim failed, don't retry driver
+                    logging.info("❌ Claim failed, will retry tomorrow")
+                    return
             else:
                 logging.error("❌ Login failed")
-                # Continue to retry with new driver
                 
-        except WebDriverException as e:
-            logging.error(f"❌ WebDriver error on attempt {driver_attempt + 1}: {e}")
-            if driver_attempt < max_driver_retries - 1:
-                logging.info("Retrying with new driver...")
-                time.sleep(10)  # Wait before retry
-            
         except Exception as e:
-            logging.error(f"❌ Unexpected error on attempt {driver_attempt + 1}: {e}")
-            if driver_attempt < max_driver_retries - 1:
-                logging.info("Retrying with new driver...")
+            logging.error(f"❌ Error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
                 time.sleep(10)
                 
         finally:
             if driver:
                 try:
                     driver.quit()
-                except Exception as e:
-                    logging.warning(f"⚠️  Error closing driver: {e}")
+                except:
+                    pass
                 driver = None
-            
-            # Clean up temp directories
             cleanup_temp_dirs()
     
-    logging.error(f"❌ Failed after {max_driver_retries} driver attempts")
+    logging.error(f"❌ Failed after {max_retries} attempts")
 
 if __name__ == "__main__":
     try:
