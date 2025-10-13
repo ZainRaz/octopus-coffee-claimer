@@ -283,102 +283,266 @@ def login_to_octopus(driver, max_retries=3):
 
 def claim_caffe_nero_offer(driver):
     """Navigate to Caffè Nero offer page and activate the offer"""
+    screenshot_dir = os.path.join(os.path.dirname(__file__), 'screenshots')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    def save_screenshot(suffix=""):
+        """Helper to safely save screenshots"""
+        try:
+            if not os.path.exists(screenshot_dir):
+                os.makedirs(screenshot_dir, exist_ok=True)
+            path = os.path.join(screenshot_dir, f'caffe_nero_{timestamp}{suffix}.png')
+            
+            # Try full page screenshot first
+            try:
+                original_size = driver.get_window_size()
+                width = driver.execute_script('return document.body.scrollWidth')
+                height = driver.execute_script('return document.body.scrollHeight')
+                driver.set_window_size(width, height)
+                time.sleep(0.5)
+                driver.save_screenshot(path)
+                driver.set_window_size(original_size['width'], original_size['height'])
+            except:
+                # Fallback to viewport screenshot
+                driver.save_screenshot(path)
+            
+            logging.info(f"📸 Screenshot: {suffix or 'main'}")
+            return path
+        except Exception as e:
+            logging.warning(f"⚠️  Screenshot failed: {e}")
+            return None
+    
+    def get_page_text():
+        """Safely get page source text"""
+        try:
+            return driver.page_source.lower()
+        except:
+            return ""
+    
+    def check_for_error_message():
+        """Check if offer is unavailable"""
+        try:
+            page_text = get_page_text()
+            if "sorry, this offer can't be claimed at the moment" in page_text:
+                return True, "Offer cannot be claimed - no codes available"
+            if "already claimed" in page_text:
+                return True, "Already claimed this offer"
+            if "more codes tomorrow" in page_text:
+                return True, "No more codes today"
+            return False, None
+        except:
+            return False, None
+    
     try:
-        # Navigate directly to the Caffè Nero offer page
+        # Navigate to offer page
         offer_url = f"https://octopus.energy/dashboard/new/accounts/{ACCOUNT_ID}/octoplus/partner/offers/caffe-nero"
         logging.info("Navigating to Caffè Nero offer page...")
-        driver.get(offer_url)
         
-        # Page can be temperamental - give it time to fully load
-        logging.info("Waiting for page to load...")
-        human_wait(5, 7)
-        
-        # Check for the "can't be claimed" error message first
-        page_text = driver.page_source.lower()
-        if "sorry, this offer can't be claimed at the moment" in page_text:
-            logging.info("ℹ️  Offer cannot be claimed at the moment - no codes available")
+        try:
+            driver.get(offer_url)
+        except Exception as e:
+            logging.error(f"❌ Failed to load page: {e}")
             return False
         
-        # Check for other unavailability messages
-        if "already claimed" in page_text or "more codes tomorrow" in page_text:
-            logging.info("ℹ️  Offer already claimed or no codes available")
+        # Initial wait
+        logging.info("Waiting for page structure...")
+        human_wait(3, 5)
+        
+        # Wait for content to load with multiple checks
+        logging.info("Waiting for page content to fully load...")
+        content_loaded = False
+        
+        for attempt in range(3):
+            try:
+                WebDriverWait(driver, 30).until(
+                    lambda d: (
+                        "activate" in get_page_text() or
+                        "sorry, this offer" in get_page_text() or
+                        "what you need to know" in get_page_text()
+                    )
+                )
+                content_loaded = True
+                logging.info("✓ Page content loaded")
+                break
+            except TimeoutException:
+                if attempt < 2:
+                    logging.warning(f"⚠️  Timeout attempt {attempt + 1}, retrying...")
+                    driver.refresh()
+                    human_wait(5, 7)
+                else:
+                    logging.error("❌ Page failed to load after 3 attempts")
+                    save_screenshot("_timeout")
+                    return False
+        
+        # Extra stability wait
+        human_wait(3, 5)
+        
+        # Take initial screenshot
+        save_screenshot("_before")
+        
+        # Check for error messages
+        has_error, error_msg = check_for_error_message()
+        if has_error:
+            logging.info(f"ℹ️  {error_msg}")
             return False
         
-        # Look for the "Activate offer" button
+        # Find the Activate button
         logging.info("Looking for 'Activate offer' button...")
-        
         activate_button = None
         
-        # Button contains a span with "Activate offer" text
-        button_selectors = [
-            # Look for button containing span with "Activate offer"
-            (By.XPATH, "//button[.//span[contains(text(), 'Activate offer')]]"),
-            (By.XPATH, "//button[.//span[contains(text(), 'Activate Offer')]]"),
-            # Look for span with text, then get parent button
-            (By.XPATH, "//span[contains(text(), 'Activate offer')]/parent::button"),
-            (By.XPATH, "//span[contains(text(), 'Activate Offer')]/parent::button"),
-            # Any button with type="button" containing activate text
-            (By.XPATH, "//button[@type='button'][contains(., 'Activate')]"),
+        # Try multiple selector strategies
+        selector_strategies = [
+            ("Button with span", By.XPATH, "//button[.//span[contains(text(), 'Activate offer')]]"),
+            ("Button with span (caps)", By.XPATH, "//button[.//span[contains(text(), 'Activate Offer')]]"),
+            ("Span parent", By.XPATH, "//span[contains(text(), 'Activate offer')]/parent::button"),
+            ("Button contains", By.XPATH, "//button[contains(., 'Activate') and contains(., 'offer')]"),
         ]
         
-        # Try each selector
-        for by, selector in button_selectors:
+        for strategy_name, by, selector in selector_strategies:
             try:
-                WebDriverWait(driver, 20).until(
+                WebDriverWait(driver, 15).until(
                     EC.presence_of_element_located((by, selector))
                 )
+                elements = driver.find_elements(by, selector)
                 
-                button = driver.find_element(by, selector)
-                if button.is_displayed():
-                    activate_button = button
-                    logging.info(f"✓ Found button using selector: {selector}")
+                for elem in elements:
+                    try:
+                        if elem.is_displayed() and elem.is_enabled():
+                            activate_button = elem
+                            logging.info(f"✓ Found button using: {strategy_name}")
+                            break
+                    except:
+                        continue
+                
+                if activate_button:
                     break
-                    
-            except TimeoutException:
-                logging.debug(f"Timeout for selector: {selector}")
-                continue
-            except Exception as e:
-                logging.debug(f"Error with selector '{selector}': {e}")
+            except:
                 continue
         
         if not activate_button:
             logging.error("❌ Could not find 'Activate offer' button")
+            save_screenshot("_no_button")
             return False
         
-        # Scroll to and click the button
-        logging.info(f"Attempting to click 'Activate offer' button")
+        # Click the button with multiple strategies
+        logging.info("Clicking 'Activate offer' button...")
+        click_successful = False
+        
         try:
             # Scroll into view
             driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", activate_button)
-            human_wait(1, 2)
+            human_wait(2, 3)
             
-            # Try JavaScript click (more reliable for React buttons)
-            driver.execute_script("arguments[0].click();", activate_button)
-            logging.info("🎯 Clicked button using JavaScript")
+            # Strategy 1: ActionChains (best for React)
+            try:
+                ActionChains(driver).move_to_element(activate_button).pause(1.0).click().perform()
+                logging.info("🎯 Clicked via ActionChains")
+                click_successful = True
+            except Exception as e:
+                logging.warning(f"ActionChains failed: {e}")
+            
+            # Strategy 2: Direct click
+            if not click_successful:
+                try:
+                    activate_button.click()
+                    logging.info("🎯 Clicked via direct click")
+                    click_successful = True
+                except Exception as e:
+                    logging.warning(f"Direct click failed: {e}")
+            
+            # Strategy 3: JavaScript click
+            if not click_successful:
+                try:
+                    driver.execute_script("arguments[0].click();", activate_button)
+                    logging.info("🎯 Clicked via JavaScript")
+                    click_successful = True
+                except Exception as e:
+                    logging.error(f"JavaScript click failed: {e}")
+            
+            if not click_successful:
+                logging.error("❌ All click methods failed")
+                save_screenshot("_click_failed")
+                return False
                 
         except Exception as e:
-            logging.error(f"Failed to click button: {e}")
+            logging.error(f"❌ Failed to click button: {e}")
+            save_screenshot("_click_error")
             return False
         
-        # Wait for the action to complete
-        human_wait(3, 5)
+        # Wait for React to process
+        logging.info("Waiting for page to update...")
+        human_wait(8, 10)
         
-        # Check for success indicators
-        success_indicators = [
-            "offer activated", "successfully activated", "code has been sent",
-            "enjoy your coffee", "code:", "your code", "redeem", "voucher code"
-        ]
+        save_screenshot("_after_click")
         
-        page_text = driver.page_source.lower()
-        if any(indicator in page_text for indicator in success_indicators):
-            logging.info("✅ Successfully claimed Caffè Nero offer!")
+        # Verify by reloading the page
+        logging.info("Reloading page to verify claim...")
+        try:
+            driver.refresh()
+            human_wait(5, 7)
+            
+            # Wait for reload to complete
+            try:
+                WebDriverWait(driver, 30).until(
+                    lambda d: len(get_page_text()) > 100
+                )
+            except:
+                pass
+            
+            human_wait(3, 5)
+            
+        except Exception as e:
+            logging.warning(f"⚠️  Page reload had issues: {e}")
+        
+        save_screenshot("_verify")
+        
+        # Comprehensive verification
+        page_source = get_page_text()
+        
+        # Check 1: Look for voucher code (strongest proof)
+        if any(indicator in page_source for indicator in ["your code", "voucher code", "redemption code"]):
+            logging.info("✅ VERIFIED: Found voucher code on page!")
+            human_wait(3, 5)
             return True
-        else:
-            logging.info("✅ Button clicked - assuming success")
+        
+        # Check 2: Look for redemption instructions
+        if "redeem" in page_source and ("caffè nero" in page_source or "caffe nero" in page_source):
+            logging.info("✅ VERIFIED: Found redemption instructions!")
+            human_wait(3, 5)
             return True
+        
+        # Check 3: Check if button is gone (strong indicator)
+        try:
+            remaining_buttons = driver.find_elements(By.XPATH, "//button[.//span[contains(text(), 'Activate offer')]]")
+            if not remaining_buttons or len(remaining_buttons) == 0:
+                logging.info("✅ VERIFIED: Activate button disappeared!")
+                human_wait(3, 5)
+                return True
+        except:
+            pass
+        
+        # Check 4: Look for "already claimed" message (means it worked)
+        if "already claimed" in page_source:
+            logging.info("✅ VERIFIED: Shows as already claimed!")
+            human_wait(3, 5)
+            return True
+        
+        # Check 5: Error message appeared (means codes ran out after our click)
+        if "sorry, this offer can't be claimed" in page_source:
+            logging.warning("⚠️  Codes unavailable after click - may have been claimed")
+            return False
+        
+        # Could not verify - be conservative
+        logging.error("❌ UNVERIFIED: Could not confirm claim success")
+        logging.error("Page did not show expected success indicators")
+        return False
             
     except Exception as e:
-        logging.error(f"❌ Failed to claim Caffè Nero offer: {e}")
+        logging.error(f"❌ Unexpected error: {e}")
+        try:
+            save_screenshot("_exception")
+        except:
+            pass
         return False
 
 def has_claimed_this_week():
